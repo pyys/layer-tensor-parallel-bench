@@ -1,0 +1,10 @@
+# 픽스처는 리비전 잠금으로부터 재생성한다 (make_fixture.py). 텍스트는 커밋하지 않는다.
+fixtures/
+
+# 측정 부산물 — 원시 결과(results/*.jsonl)만 커밋하고 로그·텔레메트리는 제외
+bench/
+*.server.log
+*.smi.csv
+
+__pycache__/
+*.pyc
