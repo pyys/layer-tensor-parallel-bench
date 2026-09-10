@@ -25,6 +25,36 @@ llama.cpp 에는 공식 [multi-GPU 안내서](https://github.com/ggml-org/llama.
 
 ---
 
+## 어디부터 읽을 것인가
+
+| 관심사 | 시작점 |
+|---|---|
+| **수치부터 보고 싶다** | 아래 [발견](#발견), 또는 [P104 보고서 2절](docs/p104-100-x4.ko.md#2-결과) |
+| **내 텐서 병렬 수치가 왜 이상한지 알고 싶다** | 아래 [NCCL 부터 설치할 것](#️-재기-전에-nccl-부터-설치할-것) |
+| **레이어 분산과 텐서 병렬 중 무엇을 쓸지 정하고 싶다** | [보고서 3절 — 해석](docs/p104-100-x4.ko.md#3-해석) |
+| **내 카드에서 투기적 디코딩이 이득인지 알고 싶다** | [파생 지표 3절 — MTP 배치 경제학](docs/p104-100-x4-metrics.ko.md#3-mtp-배치-경제학) |
+| **실제 운용 설정에서도 성립하는지 보고 싶다** | [보고서 2-6절](docs/p104-100-x4.ko.md#2-6-운용-설정에서의-재확인-q6_k--c-90000) |
+| **내 하드웨어에서 직접 재보고 싶다** | [METHOD.ko.md](METHOD.ko.md), 그 다음 [재현](#재현) |
+| **새 플랫폼을 측정해 이 저장소에 넣고 싶다** | [docs/TEMPLATE.ko.md](docs/TEMPLATE.ko.md) |
+| **원시 데이터를 직접 검증하고 싶다** | [results/p104-100-x4.jsonl](results/p104-100-x4.jsonl) |
+| **무엇을 믿으면 안 되는지 알고 싶다** | 아래 [한계](#한계), 그리고 각 보고서 6절 |
+
+### 문서 구성
+
+| 파일 | 내용 |
+|---|---|
+| [METHOD.ko.md](METHOD.ko.md) | 동결된 측정 계약. "고정" 항목이 바뀌면 결과를 같은 표에 놓을 수 없다 |
+| [docs/p104-100-x4.ko.md](docs/p104-100-x4.ko.md) | 플랫폼 보고서 — 환경·결과·해석 |
+| [docs/p104-100-x4-metrics.ko.md](docs/p104-100-x4-metrics.ko.md) | 파생 지표 — 손익분기, 스케일링 효율, MTP 경제학, 루프라인 |
+| [docs/TEMPLATE.ko.md](docs/TEMPLATE.ko.md) | 다음 플랫폼용 템플릿 |
+| [harness/server_bench.py](harness/server_bench.py) | 12셀 측정 하네스 |
+| [harness/make_fixture.py](harness/make_fixture.py) | 위키문헌 고정 리비전에서 프롬프트 픽스처를 조립 |
+| [results/](results/) | 원시 `timings` 출력. 셀당 JSON 한 줄 |
+
+영문 정본은 각 파일의 `.md` (한국어는 `.ko.md`)에 있다.
+
+---
+
 ## ⚠️ 재기 전에: NCCL 부터 설치할 것
 
 `GGML_CUDA_NCCL` 은 **기본값이 ON** 이다. 그런데 **NCCL 은 CUDA 에 포함돼 배포되지

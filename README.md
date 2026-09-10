@@ -25,6 +25,36 @@ Korean is authoritative. The two repos differ on this point.)*
 
 ---
 
+## Where to start
+
+| If you want to | Start here |
+|---|---|
+| **See the numbers** | [Findings](#findings) below, or the [P104 report](docs/p104-100-x4.md#2-results) |
+| **Know why your tensor-parallel numbers look wrong** | [Install NCCL](#-before-you-measure-anything-install-nccl) below |
+| **Decide between layer split and tensor parallelism** | [Report §3 — Interpretation](docs/p104-100-x4.md#3-interpretation) |
+| **Know whether speculative decoding pays on your card** | [Metrics §3 — MTP batch economics](docs/p104-100-x4-metrics.md#3-mtp-batch-economics) |
+| **See it re-checked at production settings** | [Report §2-6](docs/p104-100-x4.md#2-6-re-checked-at-production-settings-q6_k--c-90000) |
+| **Reproduce this on your own hardware** | [METHOD.md](METHOD.md), then [Reproducing](#reproducing) |
+| **Measure a new platform for this repo** | [docs/TEMPLATE.md](docs/TEMPLATE.md) |
+| **Check the raw data yourself** | [results/p104-100-x4.jsonl](results/p104-100-x4.jsonl) |
+| **Know what not to trust** | [Limitations](#limitations) below, and §6 of each report |
+
+### Documents
+
+| File | What it is |
+|---|---|
+| [METHOD.md](METHOD.md) | The frozen measurement contract. Change a "fixed" item and results stop being comparable |
+| [docs/p104-100-x4.md](docs/p104-100-x4.md) | Platform report — environment, results, interpretation |
+| [docs/p104-100-x4-metrics.md](docs/p104-100-x4-metrics.md) | Derived metrics — break-even, scaling efficiency, MTP economics, roofline |
+| [docs/TEMPLATE.md](docs/TEMPLATE.md) | Template for the next platform |
+| [harness/server_bench.py](harness/server_bench.py) | The 12-cell runner |
+| [harness/make_fixture.py](harness/make_fixture.py) | Builds the prompt fixture from pinned Wikisource revisions |
+| [results/](results/) | Raw `timings` output, one JSON line per cell |
+
+Korean versions are alongside each file as `*.ko.md`.
+
+---
+
 ## ⚠️ Before you measure anything: install NCCL
 
 `GGML_CUDA_NCCL` **defaults to ON**, but **NCCL does not ship with CUDA.** You have to
