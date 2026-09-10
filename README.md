@@ -29,7 +29,7 @@ Korean is authoritative. The two repos differ on this point.)*
 
 | If you want to | Start here |
 |---|---|
-| **See the numbers** | [Findings](#findings) below, or the [P104 report](docs/p104-100-x4.md#2-results) |
+| **So what's the conclusion?** | [Findings](#findings) below, or the [P104 report](docs/p104-100-x4.md#2-results) |
 | **Know why your tensor-parallel numbers look wrong** | [Install NCCL](#-before-you-measure-anything-install-nccl) below |
 | **Decide between layer split and tensor parallelism** | [Report §3 — Interpretation](docs/p104-100-x4.md#3-interpretation) |
 | **Know whether speculative decoding pays on your card** | [Metrics §3 — MTP batch economics](docs/p104-100-x4-metrics.md#3-mtp-batch-economics) |
