@@ -50,7 +50,9 @@ REQUEST_TIMEOUT = 3600   # 콜드 프리필이 길어질 수 있다
 
 SPLIT_MODES = ["layer", "tensor"]
 MTP_MODES = [False, True]
-GPU_COUNTS = [4, 3, 2]   # 빠른 조합부터 (실패해도 앞쪽 결과는 남는다)
+GPU_COUNTS = [4, 3, 2, 1]   # 빠른 조합부터 (실패해도 앞쪽 결과는 남는다)
+# N=1 은 모델이 한 장에 들어가는 플랫폼에서만 성립한다 (METHOD 1-6).
+# 스케일링 효율의 tg_1 을 환산이 아니라 실측으로 얻기 위한 셀이다.
 
 
 # ===== 프롬프트 조립 =====
@@ -139,8 +141,13 @@ def run_cell(name, split_mode, mtp, ngpu, prompts):
     log_path = os.path.join(OUTDIR, name + ".server.log")
     smi_path = os.path.join(OUTDIR, name + ".smi.csv")
 
+    # 기본은 0,1,2,3. BENCH_DEVICE_ORDER 로 순서를 바꾸면 논리 0번(텐서 병렬의 main)이
+    # 다른 물리 카드로 옮겨간다. Xid 79 가 특정 카드를 따라가는지 main 역할을
+    # 따라가는지 가르는 용도. 지정하지 않으면 동작이 바뀌지 않는다.
+    order = os.environ.get("BENCH_DEVICE_ORDER", "0,1,2,3").split(",")
+
     env = dict(os.environ)
-    env["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(ngpu))
+    env["CUDA_VISIBLE_DEVICES"] = ",".join(order[:ngpu])
 
     log = open(log_path, "w", encoding="utf-8")
     srv = subprocess.Popen(server_args(split_mode, mtp, ngpu),
@@ -149,7 +156,7 @@ def run_cell(name, split_mode, mtp, ngpu, prompts):
     smi_f = open(smi_path, "w", encoding="utf-8")
     smi = subprocess.Popen(
         ["nvidia-smi",
-         "--query-gpu=timestamp,index,utilization.gpu,power.draw,temperature.gpu,memory.used",
+         "--query-gpu=timestamp,index,utilization.gpu,memory.used,temperature.gpu,power.draw,clocks.current.sm,clocks_throttle_reasons.active",
          "--format=csv,noheader", "-l", "1"],
         stdout=smi_f, stderr=subprocess.DEVNULL)
 
