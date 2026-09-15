@@ -15,6 +15,12 @@ difference comes from the cards — but card, link, VRAM and power limit all cha
 at once, and we did not decompose how much each contributed
 [Notes and Caveats 6)](#notes-and-caveats).
 
+**On both platforms the fastest token generation came from `tensor parallelism +
+MTP off`.** Conventional advice is to use layer split with MTP on a slow interconnect;
+depending on the conditions, that is not always right. The evidence is below.
+[V100 results](docs/v100-sxm2-16gb-x4.md#2-results) ·
+[P104 results](docs/p104-100-x4.md#2-results)
+
 ---
 
 ## Where to start
