@@ -25,6 +25,7 @@ prefill and on warm turns**, so both have to be measured.
   the 16x faster link scales worse.
 
 English is authoritative; Korean lives alongside each file as `*.ko.md`.
+**이 문서의 한국어판: [README.ko.md](README.ko.md)**
 Code and raw data: MIT. Documents: CC BY 4.0.
 
 | | |
@@ -33,3 +34,8 @@ Code and raw data: MIT. Documents: CC BY 4.0.
 | [METHOD.md](METHOD.md) | Frozen measurement contract, reproduction, pitfalls |
 | [docs/](docs/) | Per-platform reports and derived metrics |
 | [results/](results/) | Raw `timings` output, one JSON line per cell |
+
+**Start with [FINDINGS.md](FINDINGS.md).** It carries the conclusions, the numbers
+behind them and the limits on each one. Everything else in the repository exists to
+support it — METHOD is the contract the numbers were produced under, `docs/` holds one
+report per platform, and `results/` is the data itself.

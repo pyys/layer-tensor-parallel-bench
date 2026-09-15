@@ -25,6 +25,7 @@ llama.cpp 의 [멀티 GPU 안내서](https://github.com/ggml-org/llama.cpp/blob/
   쪽이 오히려 덜 는다.
 
 영문이 정본이다. 한국어는 각 파일 옆에 `*.ko.md` 로 둔다.
+**English: [README.md](README.md)**
 코드와 원시 데이터는 MIT, 문서는 CC BY 4.0.
 
 | | |
@@ -33,3 +34,7 @@ llama.cpp 의 [멀티 GPU 안내서](https://github.com/ggml-org/llama.cpp/blob/
 | [METHOD.ko.md](METHOD.ko.md) | 동결된 측정 계약, 재현, 함정 |
 | [docs/](docs/) | 플랫폼별 보고서와 파생 지표 |
 | [results/](results/) | 원시 `timings` 출력. 셀당 JSON 한 줄 |
+
+**결론을 보려면 [FINDINGS.ko.md](FINDINGS.ko.md) 로 간다.** 결론과 그 근거 수치,
+그리고 각각의 한계가 거기 있다. 나머지는 그것을 뒷받침하는 문서다 — METHOD 는 이
+수치들이 만들어진 계약이고, `docs/` 는 플랫폼별 보고서, `results/` 는 데이터 자체다.
