@@ -1,4 +1,4 @@
-﻿# Findings — what we found, and what we did not
+# Findings — what we found, and what we did not
 
 Two platforms have been measured. The methodology is frozen in
 [`METHOD.md`](METHOD.md); each platform's environment, results and

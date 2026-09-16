@@ -1,4 +1,4 @@
-﻿# layer-tensor-parallel-bench
+# layer-tensor-parallel-bench
 
 **llama.cpp layer split vs tensor parallelism, measured across GPUs and interconnects.**
 

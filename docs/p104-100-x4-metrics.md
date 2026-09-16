@@ -1,4 +1,4 @@
-﻿# P104-100 8GB x4 — derived metrics
+# P104-100 8GB x4 — derived metrics
 
 Companion to [`p104-100-x4.md`](p104-100-x4.md). The formulas are in
 [METHOD section 5](../METHOD.md).

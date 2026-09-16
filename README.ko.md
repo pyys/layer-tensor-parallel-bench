@@ -1,4 +1,4 @@
-﻿# layer-tensor-parallel-bench
+# layer-tensor-parallel-bench
 
 **llama.cpp 레이어 분산 대 텐서 병렬 — GPU 와 인터커넥트를 바꿔가며 실측.**
 

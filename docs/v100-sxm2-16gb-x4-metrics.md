@@ -1,4 +1,4 @@
-﻿# V100-SXM2 16GB x4 — derived metrics
+# V100-SXM2 16GB x4 — derived metrics
 
 Companion to [`v100-sxm2-16gb-x4.md`](v100-sxm2-16gb-x4.md). The formulas are in
 [METHOD section 5](../METHOD.md).

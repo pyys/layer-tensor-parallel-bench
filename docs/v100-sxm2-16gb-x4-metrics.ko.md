@@ -1,4 +1,4 @@
-﻿# V100-SXM2 16GB ×4 — 파생 지표
+# V100-SXM2 16GB ×4 — 파생 지표
 
 [`v100-sxm2-16gb-x4.ko.md`](v100-sxm2-16gb-x4.ko.md) 의 부속 문서. 계산식은
 [METHOD 5절](../METHOD.ko.md) 에 있다.

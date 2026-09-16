@@ -1,4 +1,4 @@
-﻿# METHOD — measurement methodology (frozen, v1.2)
+# METHOD — measurement methodology (frozen, v1.2)
 
 Frozen 2026-09-15.
 
