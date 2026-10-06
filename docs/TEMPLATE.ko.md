@@ -1,6 +1,6 @@
 # <플랫폼> — 레이어 병렬 vs 텐서 병렬
 
-측정일 YYYY-MM-DD. 방법론 **METHOD v1.2** ([`../METHOD.ko.md`](../METHOD.ko.md)).
+측정일 YYYY-MM-DD. 방법론 **METHOD v1.3** ([`../METHOD.ko.md`](../METHOD.ko.md)).
 원시 데이터 [`../results/<platform>.jsonl`](../results/).
 파생 지표는 별도 문서 [`<platform>-metrics.ko.md`](<platform>-metrics.ko.md).
 

@@ -1,6 +1,6 @@
 # <platform> — layer split vs tensor parallelism
 
-Measured YYYY-MM-DD. Methodology **METHOD v1.2** ([`../METHOD.md`](../METHOD.md)).
+Measured YYYY-MM-DD. Methodology **METHOD v1.3** ([`../METHOD.md`](../METHOD.md)).
 Raw data [`../results/<platform>.jsonl`](../results/).
 Derived metrics live in [`<platform>-metrics.md`](<platform>-metrics.md).
 
