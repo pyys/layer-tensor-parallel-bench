@@ -1,6 +1,6 @@
-# METHOD — measurement methodology (frozen, v1.2)
+# METHOD — measurement methodology (frozen, v1.3)
 
-Frozen 2026-09-15.
+Frozen 2026-09-15. Revised to v1.3 on 2026-10-06.
 
 This document is **a contract that keeps platforms comparable.**
 If any item marked "fixed" changes, **the result cannot go in the same table as
@@ -155,7 +155,8 @@ report has an appendix running the same cells against a different fixture.
 
 `{layer, tensor} x {MTP off, on} x {2, 3, 4 cards}` = **12 cells**
 
-- GPU selection is `CUDA_VISIBLE_DEVICES=0,1,...`, first N devices
+- GPU selection is `CUDA_VISIBLE_DEVICES=0,1,...`, first N devices. When two cells
+  run concurrently (section 3), the second cell takes the next free devices
 - Cell names are `<split>-<nomtp|mtp>-<N>`, e.g. `tensor-nomtp-4`
 - Run order is 4 → 3 → 2 cards, so the fragile combinations come last and earlier
   results survive a failure
@@ -257,8 +258,9 @@ retried.
 | Number of available GPUs | Leave the corresponding cells empty if fewer than four |
 | **Power limit (W)** | **A card specification — record it in the environment section.** If it was adjusted during measurement, state that and the value |
 | CPU / RAM / PCIe generation / topology | Record in the environment section |
+| **Concurrent cells** (v1.3) | Two cells may run at the same time on **disjoint GPUs**, **only after the same cell has been run alone and concurrently and the difference checked.** Report that check, and record which cells overlapped and on which GPUs |
 
-**Changing anything not on this list means it is not a v1.2 measurement.**
+**Changing anything not on this list means it is not a v1.3 measurement.**
 
 ---
 
@@ -354,6 +356,8 @@ A low ratio against the spec figure means **it is not bandwidth bound.**
 | NCCL `Cuda failure 2 'out of memory'` (`transport/p2p.cc`) | The model loaded but **there is no VRAM left for NCCL P2P buffers.** Unrelated to topology. `NCCL_P2P_DISABLE=1` routes through the host and **breaks comparability.** Reducing context is the real fix, but `-c 27000` is fixed, so record the cell as failed |
 | Compute buffer OOM with `layer` + MTP + few GPUs | The MTP draft context does not fit on top. Record as failed |
 | **`Xid 79 — GPU has fallen off the bus`** | **Reproduced on `tensor` + MTP + 4 cards** (V100, twice). Record the cell as failed and **do not retry.** For contamination of following cells see section 4 |
+| Health check times out during model load, cell recorded as OOM | **Loading is slow on narrow links** — 71~111 s for the Q3_K_M model at PCIe Gen1 x1. Lowering the harness `HEALTH_TIMEOUT` below that turns a slow load into a false OOM. The harness default is 600 s; keep it at 300 s or more |
+| CUDA 13 build has no sm_61 kernels | **CUDA 13 dropped Pascal.** Use a 12.x toolkit. A driver reporting `CUDA Version: 13.0` only states the driver's ceiling |
 | `llama_params_fit is not implemented for SPLIT_MODE_TENSOR` | A warning only. `-ngl` and `-c` are given explicitly, so it does not apply |
 | `backend sampling not supported with SPLIT_MODE_TENSOR; using CPU` | Intrinsic to tensor parallelism. Treat as a controlled variable |
 | Prompt exceeds `n_ctx` | llama.cpp **truncates silently** and the measurement is contaminated. Do not skip `--check` |
@@ -393,11 +397,13 @@ MTP-off metrics (pp, tg) are independent of generated content and unaffected.
 |---|---|---|
 | v1.0 | 2026-09-10 | Initial freeze, based on the P104-100 x4 run |
 | v1.1 | 2026-09-10 | Section 4 spread check applies to **MTP off cells only** (MTP jitter is intrinsic). **Section 6-2 added** — tensor parallelism changes the output as N changes |
-| **v1.2** | **2026-09-15** | **`clocks.current.sm` and `clocks_throttle_reasons.active` added to telemetry in 1-8** (throttle aggregation was impossible under the v1.1 harness) · **NCCL warning absorbed into 1-2** · **N=1 moved from recommendation to requirement in 1-6** · power limit added to section 3 · throttle, Xid and crash contamination added to section 4 · **Xid 79 added to section 6** · reproduction procedure added as section 2 |
+| v1.2 | 2026-09-15 | **`clocks.current.sm` and `clocks_throttle_reasons.active` added to telemetry in 1-8** (throttle aggregation was impossible under the v1.1 harness) · **NCCL warning absorbed into 1-2** · **N=1 moved from recommendation to requirement in 1-6** · power limit added to section 3 · throttle, Xid and crash contamination added to section 4 · **Xid 79 added to section 6** · reproduction procedure added as section 2 |
+| **v1.3** | **2026-10-06** | **Concurrent cells on disjoint GPUs added to section 3**, conditional on an alone-versus-concurrent check (1-6 adjusted to match) · load timeout and CUDA 13 / Pascal added to section 6 |
 
-**v1.0, v1.1 and v1.2 share the same measurement conditions.** Only recorded fields
-and validation rules were added, so **results from earlier versions can go in the same
-table.** Note that measurements before v1.2 carry no throttle record.
+**v1.0 through v1.3 share the same measurement conditions.** v1.1 and v1.2 added
+recorded fields and validation rules; v1.3 added one permitted variation whose effect
+must be checked and reported before it is used. **Results from all four versions can
+go in the same table.** Note that measurements before v1.2 carry no throttle record.
 
 ---
 

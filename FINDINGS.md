@@ -1,6 +1,6 @@
 # Findings — what we found, and what we did not
 
-Two platforms have been measured. The methodology is frozen in
+Three runs on two kinds of card have been measured. The methodology is frozen in
 [`METHOD.md`](METHOD.md); each platform's environment, results and
 interpretation live in its own report.
 
@@ -8,6 +8,7 @@ interpretation live in its own report.
 |---|---|---|---|---|
 | P104-100 8GB x4 | PCIe Gen1 x4 (~1 GB/s) | 2026-09-10 | [docs/p104-100-x4.md](docs/p104-100-x4.md) | [results/](results/) |
 | V100-SXM2 16GB x4 | PCIe Gen3 x16 (~15.75 GB/s) | 2026-09-14~15 | [docs/v100-sxm2-16gb-x4.md](docs/v100-sxm2-16gb-x4.md) | [results/](results/) |
+| P104-100 8GB x4 | **PCIe Gen1 x1** (~250 MB/s) | 2026-10-01~02 | [docs/p104-100-x4-gen1x1.md](docs/p104-100-x4-gen1x1.md) | [results/](results/) |
 
 **Both platforms were measured with the same binary**
 (`CMAKE_CUDA_ARCHITECTURES=61;70`). Everything except the GPUs was reused, so the
@@ -15,11 +16,18 @@ difference comes from the cards — but card, link, VRAM and power limit all cha
 at once, and we did not decompose how much each contributed
 [Notes and Caveats 6)](#notes-and-caveats).
 
-**On both platforms the fastest token generation came from `tensor parallelism +
-MTP off`.** Conventional advice is to use layer split with MTP on a slow interconnect;
-depending on the conditions, that is not always right. The evidence is below.
+**The Gen1 x1 run is the same P104 card model on a quarter of the link**, with the
+same model file and the same llama.cpp commit (built for `61` only). The host CPU and
+RAM changed as well, so the link is not the only difference there either
+[Notes and Caveats 11)](#notes-and-caveats).
+
+**On all three runs the fastest token generation came from `tensor parallelism +
+MTP off`** — including PCIe Gen1 x1, the slowest PCIe link there is. Conventional
+advice is to use layer split with MTP on a slow interconnect; depending on the
+conditions, that is not always right. The evidence is below.
 [V100 results](docs/v100-sxm2-16gb-x4.md#2-results) ·
-[P104 results](docs/p104-100-x4.md#2-results)
+[P104 results](docs/p104-100-x4.md#2-results) ·
+[P104 Gen1 x1 results](docs/p104-100-x4-gen1x1.md#2-results)
 
 ---
 
@@ -30,7 +38,8 @@ depending on the conditions, that is not always right. The evidence is below.
 | **Whether to use layer split or tensor parallelism** | [Finding 1](#1-layer-split-buys-no-decode-speed), [Finding 2](#2-two-cards-with-tensor-parallelism-beat-four-with-layer-split) |
 | **Why your tensor-parallel numbers look wrong** | [METHOD 1-2 — NCCL](METHOD.md) |
 | **Whether speculative decoding pays off on your card** | [Finding 4](#4-speculative-decoding-flips-sign-with-the-card-and-the-split-mode) |
-| **How much a fourth card actually buys** | [Finding 5](#5-interconnect-bandwidth-is-not-what-limits-tensor-parallel-scaling) |
+| **How much a fourth card actually buys** | [Finding 5](#5-interconnect-bandwidth-and-tensor-parallel-scaling) |
+| **Whether a slow link (x1 riser) rules out tensor parallelism** | [Finding 8](#8-split-modes-respond-oppositely-to-link-bandwidth) |
 | **How to measure this yourself** | [METHOD.md](METHOD.md) |
 | **How to add a platform to this repository** | [docs/TEMPLATE.md](docs/TEMPLATE.md) |
 | **What not to trust** | [Limits](#limits), [Notes and Caveats](#notes-and-caveats) |
@@ -46,9 +55,10 @@ actually returns as cards are added.
 | N | 1 | 2 | 3 | 4 |
 |---|---|---|---|---|
 | **P104** tg | — | 8.08 | 7.97 | 7.82 |
+| **P104 Gen1 x1** tg | — | 7.61 | 7.62 | 7.40 |
 | **V100** tg | **27.71** | 27.97 | 27.78 | 27.29 |
 
-**Both platforms stay within 3%. From two cards up, more cards is slightly slower.**
+**All three stay within 3%. From two cards up, more cards is slightly slower.**
 
 **The single-card figure on V100 is measured.** The model (13,115 MiB) fits on one
 16GB card. One card gives 27.71 and four give 27.29 — a 1.5% difference.
@@ -79,13 +89,14 @@ we did not measure.
 
 Warm turn wall time.
 
-| Configuration | P104 | V100 |
-|---|---|---|
-| layer, 4 cards | 59.7s | 16.2s |
-| **tensor, 2 cards** | **36.9s** | **10.8s** |
-| tensor, 4 cards | 28.1s | 9.9s |
+| Configuration | P104 | V100 | P104 Gen1 x1 |
+|---|---|---|---|
+| layer, 4 cards | 59.7s | 16.2s | 64.7s |
+| **tensor, 2 cards** | **36.9s** | **10.8s** | **56.8s** |
+| tensor, 4 cards | 28.1s | 9.9s | 51.4s |
 
-**Half the cards, 1.6x faster on P104 and 1.5x on V100.**
+**Half the cards, 1.6x faster on P104 and 1.5x on V100** — and still 1.14x faster at
+Gen1 x1.
 
 Tensor parallelism has a slower cold prefill, so it loses the first turn. It does not
 stay behind for long.
@@ -95,12 +106,15 @@ session = cold + warm x N
 crossover N = (cold_A - cold_B) / (warm_B - warm_A)
 ```
 
-| Crossover | P104 | V100 |
-|---|---|---|
-| tensor 4 > layer 4 | 1.2 turns | **0.87** |
-| tensor 2 > layer 4 | 2.4 turns | **0.12** |
+| Crossover | P104 | V100 | P104 Gen1 x1 |
+|---|---|---|---|
+| tensor 4 > layer 4 | 1.2 turns | **0.87** | **21.5** |
+| tensor 2 > layer 4 | 2.4 turns | **0.12** | **34.0** |
 
-**On V100 tensor wins from the very first warm turn.**
+**On V100 tensor wins from the very first warm turn. At Gen1 x1 it takes 21.5 and 34
+turns** — tensor parallelism still wins every warm turn, but its cold prefill is almost
+five minutes behind (Finding 8). For a workload that keeps one long conversation going
+it still pays; for shorter sessions layer split is ahead.
 
 ### It also uses less memory
 
@@ -119,7 +133,7 @@ and of every upgrade**, paid again whenever the model changes or a card is added
 
 ---
 
-## 3. Cold and warm prefill rank the split modes in opposite order
+## 3. Cold and warm prefill rank the split modes in opposite order — except at Gen1 x1
 
 | | Cold (23,037 tok) | Warm (637~790 tok) |
 |---|---|---|
@@ -127,13 +141,17 @@ and of every upgrade**, paid again whenever the model changes or a card is added
 | **P104** tensor 4 | 171.4 | **128.8** |
 | **V100** layer 4 | **1,555.5** | 487.6 |
 | **V100** tensor 4 | 887.4 | **594.1** |
+| **P104 Gen1 x1** layer 4 | **302.6** | **68.6** |
+| **P104 Gen1 x1** tensor 4 | 60.7 | 47.2 |
 
-| Ratio | P104 | V100 |
-|---|---|---|
-| Cold — layer ahead | 1.91x | 1.75x |
-| Warm — tensor ahead | 1.51x | 1.22x |
+| Ratio | P104 | V100 | P104 Gen1 x1 |
+|---|---|---|---|
+| Cold — layer ahead | 1.91x | 1.75x | **4.99x** |
+| Warm | tensor ahead 1.51x | tensor ahead 1.22x | **layer ahead 1.45x** |
 
-**The direction holds on both platforms; only the magnitude shrinks.**
+**The direction holds on P104 at Gen1 x4 and on V100; only the magnitude shrinks.**
+**At Gen1 x1 warm prefill reverses as well** — the all-reduce per batch costs more than
+tensor parallelism gains from splitting the work, even for a 700-token prompt.
 
 23k tokens is dozens of micro-batches, enough to fill the layer pipeline, while tensor
 mode issues an all-reduce per batch. At 700 tokens there are one or two batches and
@@ -152,10 +170,10 @@ This judgement assumes the author's usage pattern
 
 Time split within a warm turn.
 
-| | P104 layer 4 | V100 layer 4 |
-|---|---|---|
-| Prefill | 8.5s (14%) | 1.5s (10%) |
-| **Generation** | **51.2s (86%)** | **14.7s (90%)** |
+| | P104 layer 4 | V100 layer 4 | P104 Gen1 x1 layer 4 |
+|---|---|---|---|
+| Prefill | 8.5s (14%) | 1.5s (10%) | 10.7s (17%) |
+| **Generation** | **51.2s (86%)** | **14.7s (90%)** | **54.0s (83%)** |
 
 When the prompt cache hits, prefill drops from 23,037 tokens to roughly 700.
 **Prefill goes from 91% of a cold turn to 10~14% of a warm one, and the workload
@@ -172,8 +190,9 @@ The standard account of speculative decoding runs like this
 bandwidth bound and mostly idle, so verifying a few draft tokens is nearly free.**
 That premise is what makes speculative decoding work.
 
-**The premise fails in all five measured conditions.** Even the lowest cost multiple
-is **1.86x**. And in **four of the five, MTP is a net loss.**
+**The premise fails in all ten measured conditions** (five more at Gen1 x1, 4-1-1).
+Even the lowest cost multiple is **1.86x**. And in **nine of the ten, MTP is a net
+loss.**
 
 ### 4-1. Measurements
 
@@ -195,11 +214,25 @@ model survives a change of platform and a change of split mode.
 The formulas are in [METHOD section 5](METHOD.md). Full per-platform tables are in
 each report.
 
+#### 4-1-1. At Gen1 x1
+
+| | layer 4 | layer 3 | tensor 4 | tensor 3 | tensor 2 |
+|---|---|---|---|---|---|
+| **Cost multiple** | **2.26** | **2.31** | **2.90** | **2.86** | **2.72** |
+| **Break-even acceptance** | 42.4% | 44.0% | **63.9%** | 62.6% | 57.9% |
+| Measured acceptance | 29.9% | 29.9% | 33.1% | 36.2% | 29.1% |
+| **Predicted** | −16.4% | −18.1% | −31.6% | −27.4% | −31.5% |
+| **Measured** | **−16.4%** | **−18.1%** | **−30.6%** | **−23.0%** | **−31.4%** |
+
+**Four of five within 1 percentage point.** `tensor-mtp-3` misses by 4.4 points; its
+warm spread is 67%, the widest in the run. Details in
+[Gen1 x1 metrics section 3](docs/p104-100-x4-gen1x1-metrics.md).
+
 ### 4-2. What sets the regime is not batch size
 
 The rule of thumb in the literature — "below 50% acceptance it is a loss" — is usually
 framed as a property of **batch size**. Here batch size is pinned at 1 and the sign
-still flips. Two things decide it.
+still flips. Three things decide it.
 
 **(a) The card.** On P104 a batch of four costs **2.25x** a single token. On a memory
 bandwidth bound card the weights are read once, so it should be nearly free.
@@ -217,6 +250,11 @@ V100  acceptance 32.0%,  break-even 29.9%   ->  gain     (layer)
 V100  acceptance 29.2%,  break-even 38.1%   ->  loss     (tensor, 3 cards)
 ```
 
+**(c) The link.** On the same P104, cutting the link from Gen1 x4 to x1 leaves the
+layer-split multiple where it was (2.25 → 2.26) and raises the tensor-parallel one from
+**2.42 to 2.90**. Verifying a batch adds all-reduce traffic, and on a narrow link that
+traffic is what costs.
+
 **Acceptance sits around 30% in all three. What moved is the break-even line.**
 
 ### 4-3. On other cards the same feature doubles throughput
@@ -229,6 +267,7 @@ V100  acceptance 29.2%,  break-even 38.1%   ->  loss     (tensor, 3 cards)
 | **This work (P104)** | P104-100 x4 | 0.299 / 0.331 | **0.84 / 0.83x** |
 | **This work (V100, layer)** | V100 16GB x4 | **0.320** | **1.035x** |
 | **This work (V100, tensor)** | V100 16GB x3 | 0.292 | **0.879x** |
+| **This work (P104, Gen1 x1)** | P104-100 x4 | 0.299 / 0.331 | **0.84 / 0.69x** |
 
 **The same feature doubles throughput on one card and loses on another.** That
 contrast also lets the logic be read backwards — if 75% acceptance yields 2x, then
@@ -251,7 +290,7 @@ multiple from **any llama.cpp run** and decide which regime your own card is in.
 
 ---
 
-## 5. Interconnect bandwidth is not what limits tensor-parallel scaling
+## 5. Interconnect bandwidth and tensor-parallel scaling
 
 ```
 efficiency(N) = (tg_tensor(N) / tg_1) / N
@@ -280,6 +319,29 @@ increase and the decay did not ease. Bandwidth improved **2.8x more than compute
 **The cause is undetermined.** Per-step synchronization latency or a fixed cost in the
 all-reduce itself are candidates, but this run did not test them.
 
+### Cutting the link on the same card does hurt
+
+The Gen1 x1 run takes the other direction — **the same card model, a quarter of the
+link.**
+
+| N | Gen1 x4 efficiency | **Gen1 x1 efficiency** |
+|---|---|---|
+| 2 | 81% | **63%** |
+| 3 | 59% | **47%** |
+| 4 | 57% | **38%** |
+
+| | Gen1 x4 | Gen1 x1 |
+|---|---|---|
+| tensor, 2 → 4 cards | 1.37x | **1.16x** |
+
+**Efficiency fell at every N, and the fourth card buys less.** The two results do not
+contradict each other: **more bandwidth than Gen1 x4 did not improve scaling, but less
+than Gen1 x4 does worsen it.** Bandwidth is not what limits scaling on these cards at
+Gen1 x4 and above; below that it becomes one of the limits. Where between x1 and x4
+that changes was not measured. The host changed along with the link
+[Notes and Caveats 11)](#notes-and-caveats). What the link does to each split mode as
+a whole is in Finding 8.
+
 > The same conclusion was reached independently for diffusion models — the cost of
 > row split in sd.cpp did not improve across the same card swap. Different engine,
 > different workload, different split implementation.
@@ -300,10 +362,14 @@ effective bandwidth = (model size / N) / time the card actually spends
 | **V100 1 card (measured)** | **382 GB/s** | **42%** (900) |
 | V100 layer 4 | 376 GB/s | 42% (900) |
 | V100 tensor 4 | 161 GB/s | 18% (900) |
+| P104 Gen1 x1 layer 4 | 102 GB/s | 32% (320) |
+| P104 Gen1 x1 tensor 4 | 38 GB/s | **12%** (320) |
 
 **All of them sit below half of spec.** V100 at one card and at four under layer split
 land on the same 42%, which is what the structure predicts — layer split only
 serializes the same work, so per-card utilization should match a single card.
+At Gen1 x1 tensor parallelism drops to 12%: more of each token's time goes to waiting
+on the link.
 
 ### Confirmed directly by lowering the clock
 
@@ -363,12 +429,12 @@ NVRM: Xid (PCI:0000:01:00): 154, GPU recovery action ... 0x1 (GPU Reset Required
 
 The other three four-card cells all completed.
 
-| Cell | P104 | V100 |
-|---|---|---|
-| `layer-nomtp-4` | ok | ok |
-| `layer-mtp-4` | ok | ok |
-| `tensor-nomtp-4` | ok | ok |
-| **`tensor-mtp-4`** | **ok (14.82 t/s)** | **crashed twice** |
+| Cell | P104 | V100 | P104 Gen1 x1 |
+|---|---|---|---|
+| `layer-nomtp-4` | ok | ok | ok |
+| `layer-mtp-4` | ok | ok | ok |
+| `tensor-nomtp-4` | ok | ok | ok |
+| **`tensor-mtp-4`** | **ok (14.82 t/s)** | **crashed twice** | **ok (7.74 t/s)** |
 
 **It is not "because it was four cards".** What is distinctive about this combination
 is neither arithmetic nor power but **transaction frequency** — tensor parallelism
@@ -377,7 +443,8 @@ peer-to-peer transfers happen more often here than anywhere else.**
 
 **And the same combination completed on P104**, where the link is 16x slower and
 generation runs at a third the speed, so transactions per second were far lower.
-Consistent with the hypothesis.
+**It completed again at Gen1 x1**, where they are lower still. Consistent with the
+hypothesis.
 
 ### Causes ruled out
 
@@ -395,6 +462,48 @@ Consistent with the hypothesis.
 **Do not use `tensor + MTP + 4 cards` on this setup.** The fastest configuration,
 `tensor-nomtp-4` at 46.62 t/s, has no MTP, and MTP is a loss in tensor mode anyway
 (Finding 4). **Avoiding it costs nothing.**
+
+---
+
+## 8. Split modes respond oppositely to link bandwidth
+
+**The same P104 card model, Gen1 x4 → Gen1 x1** — a quarter of the bandwidth.
+
+| 4 cards | Cold pp | Warm pp | tg |
+|---|---|---|---|
+| **Layer split** | 327.3 → 302.6 (**−7.5%**) | 85.3 → 68.6 (−19.6%) | 7.82 → 7.40 (**−5.4%**) |
+| **Tensor parallelism** | 171.4 → 60.7 (**−64.6%**) | 128.8 → 47.2 (−63.4%) | 17.89 → 11.16 (**−37.6%**) |
+
+Across all eleven cells, **layer split loses 4~6% of decode and 5~12% of cold prefill;
+tensor parallelism loses 24~48% of decode and 58~65% of prefill.** Layer split sends
+one activation across each card boundary; tensor parallelism does an all-reduce per
+layer per token, so its cost scales directly with the link. Warm prefill is the
+exception for layer split — it loses 18~26%. The reason was not tested.
+
+### Tensor parallelism still decodes faster at the slowest link
+
+| 4 cards, tg | Gen1 x4 | Gen1 x1 |
+|---|---|---|
+| Layer split | 7.82 | 7.40 |
+| Tensor parallelism | 17.89 | 11.16 |
+| **Tensor / layer** | **2.29x** | **1.51x** |
+
+Gen1 x1 is the narrowest link the PCIe specification defines. **The lead shrinks but
+does not reverse.** Decode reads every weight once per token — gigabytes — while the
+all-reduce traffic per token is far smaller, so splitting the reads across cards still
+wins even when the link is cut to the minimum.
+
+**What the link takes away is prefill.** At Gen1 x1 layer split reads a 23k-token cold
+prompt **5.0x faster** (76s against 380s), and warm prefill reverses too (Finding 3).
+That is why the session crossover moves from 1.2 turns to 21.5 (Finding 2).
+
+→ **On x1 risers, tensor parallelism still gives the fastest generation, but only
+pays off over long conversations that keep the prompt cache warm.** For many short or
+cold prompts, layer split is ahead. MTP should stay off either way — at Gen1 x1 it
+costs tensor parallelism 31% (Finding 4-1-1).
+
+The full per-cell table is in
+[Gen1 x1 metrics section 5](docs/p104-100-x4-gen1x1-metrics.md).
 
 ---
 
@@ -430,7 +539,11 @@ If you know of prior measurements this duplicates, please open an issue.
    [Notes and Caveats 2)](#notes-and-caveats)
 6. **No Q6 comparison on V100.** The quantization conclusion in Finding 6 is specific
    to P104
-7. Per-platform limits are in the last section of each report
+7. **The Gen1 x1 run changed the host along with the link**, so Findings 5 and 8 are
+   not single-variable comparisons [Notes and Caveats 11)](#notes-and-caveats)
+8. **Nine of the eleven Gen1 x1 cells were measured concurrently**, two cells at a
+   time on separate GPUs [Notes and Caveats 10)](#notes-and-caveats)
+9. Per-platform limits are in the last section of each report
 
 ---
 
@@ -499,6 +612,23 @@ pattern** — long context held across many turns, with the prompt cache hitting
 For workloads where the cache does not hit — one-shot queries, RAG that inserts a
 different document each time, batch processing — **cold prefill keeps dominating**, and
 the conclusion shifts toward layer split. The prompt design is in METHOD 1-3.
+
+**10)** **Nine of the eleven Gen1 x1 cells were measured concurrently** — two cells at a
+time on disjoint GPUs of the six installed. **The same cells were first run both alone
+and concurrently, the difference was confirmed to be small, and only then was the rest
+of the matrix run concurrently.** The largest difference was 2.1% (cold prefill of
+`layer-nomtp-2`); decode differed by 1.7% at most. The comparison, the pairing and the
+GPUs used are in the [Gen1 x1 report section 5-1](docs/p104-100-x4-gen1x1.md); the
+alone runs are kept in the raw data as `validity: side`. METHOD v1.3 permits this,
+conditional on that check.
+
+**11)** **The Gen1 x1 run is not a single-variable comparison with Gen1 x4.** The card
+model, the model file (sha256 identical) and the llama.cpp commit are the same, but the
+host changed with the link — EPYC 7232 / 32GB to i7-5820K / 16GB — and so did the
+driver (580.173 → 580.178) and the CUDA architecture list (`61;70` → `61`). Prefill and
+decode are GPU bound and the CPU only tokenizes and samples, so the link is taken as the
+main factor, **but it was not isolated.** The earlier report did not record card UUIDs,
+so the physical units cannot be shown to be the same.
 
 ---
 
