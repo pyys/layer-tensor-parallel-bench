@@ -1,6 +1,6 @@
-# METHOD — measurement methodology (frozen, v1.3)
+# METHOD — measurement methodology (frozen, v1.4)
 
-Frozen 2026-09-15. Revised to v1.3 on 2026-10-06.
+Frozen 2026-09-15. Revised to v1.3 on 2026-10-06 and to v1.4 on 2026-10-19.
 
 This document is **a contract that keeps platforms comparable.**
 If any item marked "fixed" changes, **the result cannot go in the same table as
@@ -156,7 +156,8 @@ report has an appendix running the same cells against a different fixture.
 `{layer, tensor} x {MTP off, on} x {2, 3, 4 cards}` = **12 cells**
 
 - GPU selection is `CUDA_VISIBLE_DEVICES=0,1,...`, first N devices. When two cells
-  run concurrently (section 3), the second cell takes the next free devices
+  run concurrently (section 3), the second cell takes the next free devices. On a
+  shared system, take the first N UUIDs of the devices available to you (section 3)
 - Cell names are `<split>-<nomtp|mtp>-<N>`, e.g. `tensor-nomtp-4`
 - Run order is 4 → 3 → 2 cards, so the fragile combinations come last and earlier
   results survive a failure
@@ -259,8 +260,9 @@ retried.
 | **Power limit (W)** | **A card specification — record it in the environment section.** If it was adjusted during measurement, state that and the value |
 | CPU / RAM / PCIe generation / topology | Record in the environment section |
 | **Concurrent cells** (v1.3) | Two cells may run at the same time on **disjoint GPUs**, **only after the same cell has been run alone and concurrently and the difference checked.** Report that check, and record which cells overlapped and on which GPUs |
+| **Shared system** (v1.4) | Only some GPUs of a system shared with other users may be used. In that case (a) **select devices by UUID** — CUDA device numbers and `nvidia-smi` numbers can differ, (b) add **`-i <devices under test>`** to the 1-8 telemetry so only those devices are recorded, and (c) do not use or query any device that is not under test. Record the devices used and the topology between them in the report. **If the kernel log cannot be read**, mark the Xid item of section 4 "not checked" and give the reason |
 
-**Changing anything not on this list means it is not a v1.3 measurement.**
+**Changing anything not on this list means it is not a v1.4 measurement.**
 
 ---
 
@@ -388,6 +390,8 @@ MTP-off metrics (pp, tg) are independent of generated content and unaffected.
   modes. Use it as a reference figure only, and say so
 - **Do not put values measured under a different methodology version in the same
   table**
+- **A run that changes a fixed item of section 1 is a supplementary run.** Keep it in
+  [`supplements/`](supplements/README.md) and out of the tables of the main matrix
 
 ---
 
@@ -398,12 +402,14 @@ MTP-off metrics (pp, tg) are independent of generated content and unaffected.
 | v1.0 | 2026-09-10 | Initial freeze, based on the P104-100 x4 run |
 | v1.1 | 2026-09-10 | Section 4 spread check applies to **MTP off cells only** (MTP jitter is intrinsic). **Section 6-2 added** — tensor parallelism changes the output as N changes |
 | v1.2 | 2026-09-15 | **`clocks.current.sm` and `clocks_throttle_reasons.active` added to telemetry in 1-8** (throttle aggregation was impossible under the v1.1 harness) · **NCCL warning absorbed into 1-2** · **N=1 moved from recommendation to requirement in 1-6** · power limit added to section 3 · throttle, Xid and crash contamination added to section 4 · **Xid 79 added to section 6** · reproduction procedure added as section 2 |
-| **v1.3** | **2026-10-06** | **Concurrent cells on disjoint GPUs added to section 3**, conditional on an alone-versus-concurrent check (1-6 adjusted to match) · load timeout and CUDA 13 / Pascal added to section 6 |
+| v1.3 | 2026-10-06 | **Concurrent cells on disjoint GPUs added to section 3**, conditional on an alone-versus-concurrent check (1-6 adjusted to match) · load timeout and CUDA 13 / Pascal added to section 6 |
+| **v1.4** | **2026-10-19** | **Shared-system clause added to section 3** — select devices by UUID, limit telemetry to the devices under test, report Xid as "not checked" when the kernel log cannot be read (1-6 adjusted to match) · location of supplementary runs (`supplements/`) added to section 7 |
 
-**v1.0 through v1.3 share the same measurement conditions.** v1.1 and v1.2 added
+**v1.0 through v1.4 share the same measurement conditions.** v1.1 and v1.2 added
 recorded fields and validation rules; v1.3 added one permitted variation whose effect
-must be checked and reported before it is used. **Results from all four versions can
-go in the same table.** Note that measurements before v1.2 carry no throttle record.
+must be checked and reported before it is used, and v1.4 one that narrows what is used
+and recorded on a shared system. **Results from all five versions can go in the same
+table.** Note that measurements before v1.2 carry no throttle record.
 
 ---
 

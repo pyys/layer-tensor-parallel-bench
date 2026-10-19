@@ -1,6 +1,6 @@
 # Findings — what we found, and what we did not
 
-Three runs on two kinds of card have been measured. The methodology is frozen in
+Four runs on two kinds of card have been measured. The methodology is frozen in
 [`METHOD.md`](METHOD.md); each platform's environment, results and
 interpretation live in its own report.
 
@@ -9,6 +9,7 @@ interpretation live in its own report.
 | P104-100 8GB x4 | PCIe Gen1 x4 (~1 GB/s) | 2026-09-10 | [docs/p104-100-x4.md](docs/p104-100-x4.md) | [results/](results/) |
 | V100-SXM2 16GB x4 | PCIe Gen3 x16 (~15.75 GB/s) | 2026-09-14~15 | [docs/v100-sxm2-16gb-x4.md](docs/v100-sxm2-16gb-x4.md) | [results/](results/) |
 | P104-100 8GB x4 | **PCIe Gen1 x1** (~250 MB/s) | 2026-10-01~02 | [docs/p104-100-x4-gen1x1.md](docs/p104-100-x4-gen1x1.md) | [results/](results/) |
+| V100-SXM2 16GB x4 | **NVLink** (DGX-1, 25.78 GB/s per link, 1~2 links per pair) | 2026-10-19 | [docs/v100-sxm2-16gb-x4-nvlink.md](docs/v100-sxm2-16gb-x4-nvlink.md) | [results/](results/) |
 
 **Both platforms were measured with the same binary**
 (`CMAKE_CUDA_ARCHITECTURES=61;70`). Everything except the GPUs was reused, so the
@@ -21,13 +22,26 @@ same model file and the same llama.cpp commit (built for `61` only). The host CP
 RAM changed as well, so the link is not the only difference there either
 [Notes and Caveats 11)](#notes-and-caveats).
 
-**On all three runs the fastest token generation came from `tensor parallelism +
+**The NVLink run is the same V100 card model in a factory SXM2 system (DGX-1).** The
+cards in the earlier V100 run were SXM2 modules adapted to PCIe, with no NVLink. The
+model file (sha256 identical) and the llama.cpp commit are the same, but the build was
+separate (`70`) and the whole system — power delivery, cooling, host — changed with it
+[Notes and Caveats 12)](#notes-and-caveats). Four GPUs of a shared eight-GPU system
+were used [Notes and Caveats 13)](#notes-and-caveats).
+
+**On all four runs the fastest token generation came from `tensor parallelism +
 MTP off`** — including PCIe Gen1 x1, the slowest PCIe link there is. Conventional
 advice is to use layer split with MTP on a slow interconnect; depending on the
 conditions, that is not always right. The evidence is below.
 [V100 results](docs/v100-sxm2-16gb-x4.md#2-results) ·
 [P104 results](docs/p104-100-x4.md#2-results) ·
-[P104 Gen1 x1 results](docs/p104-100-x4-gen1x1.md#2-results)
+[P104 Gen1 x1 results](docs/p104-100-x4-gen1x1.md#2-results) ·
+[V100 NVLink results](docs/v100-sxm2-16gb-x4-nvlink.md#2-results)
+
+**There is also a supplementary run with a different model.** Gemma 4 31B was measured
+the same way on the same NVLink system — tensor scaling efficiency did not depend on the
+model, and the MTP result came out the opposite way
+([Supplementary finding S1](#supplementary-findings--outside-the-frozen-method)).
 
 ---
 
@@ -40,6 +54,8 @@ conditions, that is not always right. The evidence is below.
 | **Whether speculative decoding pays off on your card** | [Finding 4](#4-speculative-decoding-flips-sign-with-the-card-and-the-split-mode) |
 | **How much a fourth card actually buys** | [Finding 5](#5-interconnect-bandwidth-and-tensor-parallel-scaling) |
 | **Whether a slow link (x1 riser) rules out tensor parallelism** | [Finding 8](#8-split-modes-respond-oppositely-to-link-bandwidth) |
+| **What changes on an NVLink system** | [Finding 3](#3-cold-and-warm-prefill-rank-the-split-modes-in-opposite-order--except-on-nvlink-and-at-gen1-x1), [Finding 5](#5-interconnect-bandwidth-and-tensor-parallel-scaling) |
+| **Whether the conclusions hold for another model** | [Supplementary finding S1](#supplementary-findings--outside-the-frozen-method) |
 | **How to measure this yourself** | [METHOD.md](METHOD.md) |
 | **How to add a platform to this repository** | [docs/TEMPLATE.md](docs/TEMPLATE.md) |
 | **What not to trust** | [Limits](#limits), [Notes and Caveats](#notes-and-caveats) |
@@ -57,8 +73,11 @@ actually returns as cards are added.
 | **P104** tg | — | 8.08 | 7.97 | 7.82 |
 | **P104 Gen1 x1** tg | — | 7.61 | 7.62 | 7.40 |
 | **V100** tg | **27.71** | 27.97 | 27.78 | 27.29 |
+| **V100 NVLink** tg | **27.13** | 27.97 | 27.39 | 26.90 |
 
-**All three stay within 3%. From two cards up, more cards is slightly slower.**
+**All four stay within 4%. From two cards up, more cards is slightly slower.**
+Switching the interconnect from PCIe to NVLink changes nothing here — layer split
+passes one activation across each card boundary, so the link has almost nothing to do.
 
 **The single-card figure on V100 is measured.** The model (13,115 MiB) fits on one
 16GB card. One card gives 27.71 and four give 27.29 — a 1.5% difference.
@@ -73,8 +92,11 @@ Token generation walks the layers in sequence, so only one card computes at a ti
 |---|---|---|---|---|
 | **V100 cold pp** | 747.4 | 1,091.1 | 1,435.3 | **1,555.5** |
 | **V100 warm pp** | 488.4 | 490.9 | 492.7 | 487.6 |
+| **V100 NVLink cold pp** | 720.7 | 1,062.7 | 1,412.9 | **1,533.9** |
+| **V100 NVLink warm pp** | 472.5 | 485.9 | 488.5 | 473.8 |
 
-Cold prefill throughput rises by up to **2.08x**, while warm prefill barely moves.
+Cold prefill throughput rises by up to **2.08x** (2.13x on NVLink), while warm prefill
+barely moves.
 A cold prompt has dozens of micro-batches, enough to fill the pipeline; a warm turn
 (637~790 tokens) has one or two and cannot.
 
@@ -89,14 +111,14 @@ we did not measure.
 
 Warm turn wall time.
 
-| Configuration | P104 | V100 | P104 Gen1 x1 |
-|---|---|---|---|
-| layer, 4 cards | 59.7s | 16.2s | 64.7s |
-| **tensor, 2 cards** | **36.9s** | **10.8s** | **56.8s** |
-| tensor, 4 cards | 28.1s | 9.9s | 51.4s |
+| Configuration | P104 | V100 | P104 Gen1 x1 | V100 NVLink |
+|---|---|---|---|---|
+| layer, 4 cards | 59.7s | 16.2s | 64.7s | 16.5s |
+| **tensor, 2 cards** | **36.9s** | **10.8s** | **56.8s** | **10.5s** |
+| tensor, 4 cards | 28.1s | 9.9s | 51.4s | 7.9s |
 
-**Half the cards, 1.6x faster on P104 and 1.5x on V100** — and still 1.14x faster at
-Gen1 x1.
+**Half the cards, 1.6x faster on P104 and 1.5x on V100** — still 1.14x faster at
+Gen1 x1, and 1.57x faster on NVLink.
 
 Tensor parallelism has a slower cold prefill, so it loses the first turn. It does not
 stay behind for long.
@@ -106,15 +128,18 @@ session = cold + warm x N
 crossover N = (cold_A - cold_B) / (warm_B - warm_A)
 ```
 
-| Crossover | P104 | V100 | P104 Gen1 x1 |
-|---|---|---|---|
-| tensor 4 > layer 4 | 1.2 turns | **0.87** | **21.5** |
-| tensor 2 > layer 4 | 2.4 turns | **0.12** | **34.0** |
+| Crossover | P104 | V100 | P104 Gen1 x1 | V100 NVLink |
+|---|---|---|---|---|
+| tensor 4 > layer 4 | 1.2 turns | **0.87** | **21.5** | **−1.32** |
+| tensor 2 > layer 4 | 2.4 turns | **0.12** | **34.0** | **−0.23** |
 
 **On V100 tensor wins from the very first warm turn. At Gen1 x1 it takes 21.5 and 34
 turns** — tensor parallelism still wins every warm turn, but its cold prefill is almost
 five minutes behind (Finding 8). For a workload that keeps one long conversation going
 it still pays; for shorter sessions layer split is ahead.
+
+**On NVLink the crossover is negative** — tensor is already faster on the cold turn, so
+there is nothing to wait for (Finding 3).
 
 ### It also uses less memory
 
@@ -133,7 +158,7 @@ and of every upgrade**, paid again whenever the model changes or a card is added
 
 ---
 
-## 3. Cold and warm prefill rank the split modes in opposite order — except at Gen1 x1
+## 3. Cold and warm prefill rank the split modes in opposite order — except on NVLink and at Gen1 x1
 
 | | Cold (23,037 tok) | Warm (637~790 tok) |
 |---|---|---|
@@ -143,15 +168,30 @@ and of every upgrade**, paid again whenever the model changes or a card is added
 | **V100** tensor 4 | 887.4 | **594.1** |
 | **P104 Gen1 x1** layer 4 | **302.6** | **68.6** |
 | **P104 Gen1 x1** tensor 4 | 60.7 | 47.2 |
+| **V100 NVLink** layer 4 | 1,533.9 | 473.8 |
+| **V100 NVLink** tensor 4 | **1,968.2** | **903.8** |
 
-| Ratio | P104 | V100 | P104 Gen1 x1 |
-|---|---|---|---|
-| Cold — layer ahead | 1.91x | 1.75x | **4.99x** |
-| Warm | tensor ahead 1.51x | tensor ahead 1.22x | **layer ahead 1.45x** |
+| Ratio | P104 | V100 | P104 Gen1 x1 | V100 NVLink |
+|---|---|---|---|---|
+| Cold | layer ahead 1.91x | layer ahead 1.75x | **layer ahead 4.99x** | **tensor ahead 1.28x** |
+| Warm | tensor ahead 1.51x | tensor ahead 1.22x | **layer ahead 1.45x** | **tensor ahead 1.91x** |
 
 **The direction holds on P104 at Gen1 x4 and on V100; only the magnitude shrinks.**
 **At Gen1 x1 warm prefill reverses as well** — the all-reduce per batch costs more than
 tensor parallelism gains from splitting the work, even for a 700-token prompt.
+
+**On NVLink it reverses the other way — tensor wins the cold prefill too.** On the same
+V100 card model the four-card tensor cold pp went from 887.4 to 1,968.2 (**2.22x**), while
+four-card layer split stayed where it was (1,555.5 → 1,533.9). We read this as the
+per-batch all-reduce becoming cheaper on NVLink than the advantage of the layer pipeline.
+**As the link widens from Gen1 x1 to Gen1 x4 to Gen3 x16 to NVLink, the cold layer lead
+shrinks from 4.99x to 1.91x to 1.75x and then turns into a tensor lead** (the first two
+steps are P104 and the last two V100, so the cards are mixed
+[Notes and Caveats 12)](#notes-and-caveats)).
+
+⚠️ This reversal **did not hold for another model.** On the same NVLink system Gemma 4
+31B ran the cold prefill at the same rate under both splits (1,589.7 against 1,598.7) —
+[Supplementary finding S1](#supplementary-findings--outside-the-frozen-method).
 
 23k tokens is dozens of micro-batches, enough to fill the layer pipeline, while tensor
 mode issues an all-reduce per batch. At 700 tokens there are one or two batches and
@@ -170,10 +210,10 @@ This judgement assumes the author's usage pattern
 
 Time split within a warm turn.
 
-| | P104 layer 4 | V100 layer 4 | P104 Gen1 x1 layer 4 |
-|---|---|---|---|
-| Prefill | 8.5s (14%) | 1.5s (10%) | 10.7s (17%) |
-| **Generation** | **51.2s (86%)** | **14.7s (90%)** | **54.0s (83%)** |
+| | P104 layer 4 | V100 layer 4 | P104 Gen1 x1 layer 4 | V100 NVLink layer 4 |
+|---|---|---|---|---|
+| Prefill | 8.5s (14%) | 1.5s (10%) | 10.7s (17%) | 1.5s (9%) |
+| **Generation** | **51.2s (86%)** | **14.7s (90%)** | **54.0s (83%)** | **14.8s (91%)** |
 
 When the prompt cache hits, prefill drops from 23,037 tokens to roughly 700.
 **Prefill goes from 91% of a cold turn to 10~14% of a warm one, and the workload
@@ -190,9 +230,9 @@ The standard account of speculative decoding runs like this
 bandwidth bound and mostly idle, so verifying a few draft tokens is nearly free.**
 That premise is what makes speculative decoding work.
 
-**The premise fails in all ten measured conditions** (five more at Gen1 x1, 4-1-1).
-Even the lowest cost multiple is **1.86x**. And in **nine of the ten, MTP is a net
-loss.**
+**The premise fails in all eighteen measured conditions** (five more at Gen1 x1 in
+4-1-1, eight more on NVLink in 4-1-2). Even the lowest cost multiple is **1.82x**. And in
+**eleven of the eighteen, MTP is a net loss.**
 
 ### 4-1. Measurements
 
@@ -228,6 +268,22 @@ each report.
 warm spread is 67%, the widest in the run. Details in
 [Gen1 x1 metrics section 3](docs/p104-100-x4-gen1x1-metrics.md).
 
+#### 4-1-2. On NVLink
+
+| | layer 4 | layer 3 | layer 2 | layer 1 | tensor 4 | tensor 3 | tensor 2 | tensor 1 |
+|---|---|---|---|---|---|---|---|---|
+| **Cost multiple** | **1.816** | **1.827** | **1.819** | **1.837** | **1.904** | **1.860** | **1.897** | **1.886** |
+| **Break-even acceptance** | 27.4% | 27.8% | 27.5% | 28.1% | 30.4% | 28.9% | 30.3% | 29.8% |
+| Measured acceptance | 32.0% | 32.0% | 32.0% | 32.0% | 27.5% | 31.4% | 27.8% | 32.0% |
+| **Predicted** | +7.5% | +6.8% | +7.3% | +6.2% | −4.6% | +4.0% | −3.8% | +3.4% |
+| **Measured** | **+7.6%** | **+7.0%** | **+7.6%** | **+6.6%** | **−4.5%** | **+4.1%** | **−3.6%** | **+3.7%** |
+
+**All eight within 0.4 percentage points.** The cost multiple sits between 1.82 and 1.90
+almost regardless of split mode and card count, so the sign turns on small differences
+in acceptance — all four layer cells gain, and tensor loses at two and four cards, where
+acceptance came out lower. Details in
+[NVLink metrics section 3](docs/v100-sxm2-16gb-x4-nvlink-metrics.md).
+
 ### 4-2. What sets the regime is not batch size
 
 The rule of thumb in the literature — "below 50% acceptance it is a loss" — is usually
@@ -255,6 +311,12 @@ layer-split multiple where it was (2.25 → 2.26) and raises the tensor-parallel
 **2.42 to 2.90**. Verifying a batch adds all-reduce traffic, and on a narrow link that
 traffic is what costs.
 
+**The other direction holds too.** Moving the same V100 card model from PCIe to NVLink
+drops the three-card tensor multiple from **2.13 to 1.86** and flips its sign (−12.1% →
++4.1%). The four-card layer multiple moves only a little, 1.89 → 1.82 (+3.5% → +7.6%).
+**The link moves the tensor-parallel multiple and barely touches the layer-split one** —
+whether it widens or narrows.
+
 **Acceptance sits around 30% in all three. What moved is the break-even line.**
 
 ### 4-3. On other cards the same feature doubles throughput
@@ -268,6 +330,8 @@ traffic is what costs.
 | **This work (V100, layer)** | V100 16GB x4 | **0.320** | **1.035x** |
 | **This work (V100, tensor)** | V100 16GB x3 | 0.292 | **0.879x** |
 | **This work (P104, Gen1 x1)** | P104-100 x4 | 0.299 / 0.331 | **0.84 / 0.69x** |
+| **This work (V100 NVLink, layer)** | V100 16GB x4 | **0.320** | **1.076x** |
+| **This work (V100 NVLink, tensor)** | V100 16GB x4 | 0.275 | **0.955x** |
 
 **The same feature doubles throughput on one card and loses on another.** That
 contrast also lets the logic be read backwards — if 75% acceptance yields 2x, then
@@ -347,6 +411,36 @@ a whole is in Finding 8.
 > different workload, different split implementation.
 > → [`image-model-split-bench`](https://github.com/pyys/image-model-split-bench)
 
+### Moving the same card to NVLink does improve scaling
+
+**The same V100 card model, PCIe Gen3 x16 → NVLink.**
+
+| N | PCIe V100 efficiency | **NVLink efficiency** | NVLink tg |
+|---|---|---|---|
+| 2 | 75% | **78%** | 42.40 |
+| 3 | 51% | **59%** | 48.31 |
+| 4 | 42% | **52%** | 56.73 |
+
+| | PCIe V100 | NVLink |
+|---|---|---|
+| tensor, 2 → 4 cards | 1.12x | **1.34x** |
+
+**Efficiency rose at every N, and more so with more cards.** `tg_1` is measured on both
+(27.71 / 27.13). The two-card cell uses an NV1 pair (one link) and differs little from
+PCIe; the gap opens at three and four cards.
+
+**Read together with the two results above:** raising PCIe bandwidth 16x (Gen1 x4 →
+Gen3 x16) did not improve scaling, cutting it to a quarter (→ Gen1 x1) worsened it, and
+**moving to NVLink improved it.** That fits the reading that what decides scaling is not
+the size of the PCIe bandwidth but **a direct GPU-to-GPU path that does not cross a host
+bridge.** Of the candidates listed under "the cause is undetermined" above, it puts
+weight on **per-step synchronization latency.** The whole system changed along with the
+link, so **this is not settled** [Notes and Caveats 12)](#notes-and-caveats).
+
+On the same NVLink system, switching the model to Gemma 4 31B left efficiency almost
+unchanged at 77 / 62 / 53% —
+[Supplementary finding S1](#supplementary-findings--outside-the-frozen-method).
+
 ---
 
 ## 6. On these cards decode is not bandwidth bound
@@ -364,12 +458,17 @@ effective bandwidth = (model size / N) / time the card actually spends
 | V100 tensor 4 | 161 GB/s | 18% (900) |
 | P104 Gen1 x1 layer 4 | 102 GB/s | 32% (320) |
 | P104 Gen1 x1 tensor 4 | 38 GB/s | **12%** (320) |
+| V100 NVLink 1 card (measured) | 373 GB/s | 41% (900) |
+| V100 NVLink layer 4 | 370 GB/s | 41% (900) |
+| V100 NVLink tensor 4 | 195 GB/s | 22% (900) |
 
 **All of them sit below half of spec.** V100 at one card and at four under layer split
 land on the same 42%, which is what the structure predicts — layer split only
 serializes the same work, so per-card utilization should match a single card.
 At Gen1 x1 tensor parallelism drops to 12%: more of each token's time goes to waiting
-on the link.
+on the link. On NVLink it goes the other way, from 18% to 22%. One card and layer split
+stay at the same 41~42% as on PCIe V100 — the card itself behaves the same, and what the
+link changes is only how long tensor parallelism waits.
 
 ### Confirmed directly by lowering the clock
 
@@ -429,12 +528,12 @@ NVRM: Xid (PCI:0000:01:00): 154, GPU recovery action ... 0x1 (GPU Reset Required
 
 The other three four-card cells all completed.
 
-| Cell | P104 | V100 | P104 Gen1 x1 |
-|---|---|---|---|
-| `layer-nomtp-4` | ok | ok | ok |
-| `layer-mtp-4` | ok | ok | ok |
-| `tensor-nomtp-4` | ok | ok | ok |
-| **`tensor-mtp-4`** | **ok (14.82 t/s)** | **crashed twice** | **ok (7.74 t/s)** |
+| Cell | P104 | V100 | P104 Gen1 x1 | V100 NVLink |
+|---|---|---|---|---|
+| `layer-nomtp-4` | ok | ok | ok | ok |
+| `layer-mtp-4` | ok | ok | ok | ok |
+| `tensor-nomtp-4` | ok | ok | ok | ok |
+| **`tensor-mtp-4`** | **ok (14.82 t/s)** | **crashed twice** | **ok (7.74 t/s)** | **ok (54.16 t/s)** |
 
 **It is not "because it was four cards".** What is distinctive about this combination
 is neither arithmetic nor power but **transaction frequency** — tensor parallelism
@@ -445,6 +544,12 @@ peer-to-peer transfers happen more often here than anywhere else.**
 generation runs at a third the speed, so transactions per second were far lower.
 **It completed again at Gen1 x1**, where they are lower still. Consistent with the
 hypothesis.
+
+**It also completed on the same V100 card model in the NVLink system** — generation is
+faster than on PCIe V100 (54.16 t/s), but the small transfers between GPUs travel over
+NVLink rather than PCIe. Also consistent with the hypothesis. That system is a factory
+unit with different power delivery and cooling, though, and Xid could not be checked in
+the kernel log [Notes and Caveats 13)](#notes-and-caveats).
 
 ### Causes ruled out
 
@@ -459,9 +564,9 @@ hypothesis.
 
 ### What it means in practice
 
-**Do not use `tensor + MTP + 4 cards` on this setup.** The fastest configuration,
-`tensor-nomtp-4` at 46.62 t/s, has no MTP, and MTP is a loss in tensor mode anyway
-(Finding 4). **Avoiding it costs nothing.**
+**Do not use `tensor + MTP + 4 cards` on the PCIe-adapted V100 setup.** The fastest
+configuration, `tensor-nomtp-4` at 46.62 t/s, has no MTP, and MTP is a loss in tensor
+mode on that setup anyway (Finding 4). **Avoiding it costs nothing.**
 
 ---
 
@@ -507,6 +612,65 @@ The full per-cell table is in
 
 ---
 
+## Supplementary findings — outside the frozen method
+
+This section reports observations from **supplementary runs that change a fixed item of
+METHOD.** They are not used as evidence for Findings 1~8 and are numbered separately
+with S. The status and rules of supplementary runs are in
+[`supplements/README.md`](supplements/README.md) [Notes and Caveats 14)](#notes-and-caveats).
+
+### S1. The model decides whether MTP pays; it does not decide tensor scaling
+
+**Same NVLink system, same GPUs 0~3, same fixture text — only the model changed:**
+Qwen3.8-27B Q3_K_M from the main run against Gemma 4 31B Q6_K from the supplementary run.
+→ [Supplementary report](supplements/gemma4-31b-v100-sxm2-16gb-x4-nvlink.md)
+
+**Tensor scaling efficiency — nearly identical**
+
+| N | Qwen (main) | Gemma (supplementary) |
+|---|---|---|
+| 2 | 78% | 77% |
+| 3 | 59% | 62% |
+| 4 | 52% | 53% |
+
+Model size (13 against 24 GiB), architecture (three quarters of Qwen's layers are
+DeltaNet) and quantization all differ, yet the two stay within 3 points. Read with
+Finding 5: **on these systems what set tensor scaling was the interconnect, not the
+model.**
+
+**MTP — opposite results**
+
+| | Qwen cost multiple | **Qwen result** | Gemma cost multiple | **Gemma result** |
+|---|---|---|---|---|
+| layer 4 | 1.82 | **+7.6%** | **3.69** | **−41.2%** |
+| layer 2 | 1.82 | +7.6% | 2.18 | −0.6% |
+| tensor 4 | 1.90 | **−4.5%** | **1.77** | **+26.9%** |
+| tensor 2 | 1.90 | −3.6% | **1.69** | **+27.0%** |
+
+**Gemma's acceptance is nearly the same, 38.7~42.0%, both under tensor where it gains
+and under layer where it loses.** What flips the sign is the **cost multiple** — Finding
+4's "what moved is the break-even line" shows up between models as well. Qwen's multiple
+stays at 1.82~1.90 regardless of split mode or card count; Gemma's spreads from 1.69 to
+3.69.
+
+**Hypothesis (not tested)** — the MTP structures differ. Qwen uses a one-layer head inside
+the model; Gemma uses a separate four-layer draft model that shares the main model's KV.
+Under layer split Gemma's per-step cost jumps from 94.9 to 158.1 ms between two and three
+cards while the per-token cost stays put, which suggests that the cost of the draft path
+crossing card boundaries grows with the card count.
+
+**In practice** — **measure whether to enable MTP for each model.** A conclusion drawn on
+one model (such as "on for layer, off for tensor") can be exactly reversed on another.
+The cost multiple needs only `draft_n`, `draft_n_accepted` and `predicted_ms`
+(Finding 4-4).
+
+**Also observed** — Finding 3's "on NVLink tensor wins the cold prefill too" did not hold
+for Gemma (cold pp 1,589.7 tensor against 1,598.7 layer). And Gemma's `tensor + MTP + 3
+cards` aborted during load with a `GGML_ASSERT` — it occurs only when an uneven three-way
+split meets draft KV sharing, and is described in section 6 of the report.
+
+---
+
 ## Relation to prior work
 
 This repository does not contradict the sources below; it fills a gap in them.
@@ -528,12 +692,14 @@ If you know of prior measurements this duplicates, please open an issue.
 1. **One run per cell.** Four warm turns show within-cell variation, but run-to-run
    reproducibility was not measured
 2. **One model, one quantization.** A different architecture — particularly a
-   different full-attention ratio — may behave differently
+   different full-attention ratio — may behave differently. A supplementary run did
+   find the MTP result reversed on another model (Supplementary finding S1)
 3. **`ignore_eos` depresses MTP acceptance.** Generation continues past where the
    model would stop, so acceptance reads lower than in real use
    [Notes and Caveats 7)](#notes-and-caveats)
-4. **`tensor-mtp-4` is permanently missing on V100** (Finding 7). Do not extrapolate
-   the tensor-mode MTP result to four cards
+4. **`tensor-mtp-4` is permanently missing on the PCIe-adapted V100** (Finding 7). It
+   was measured on the NVLink system (−4.5%), but that is a different system and is not
+   used to fill the gap
 5. **The single-card baseline on P104 is still derived**, not measured. V100 only
    confirmed that the derivation is sound
    [Notes and Caveats 2)](#notes-and-caveats)
@@ -543,7 +709,12 @@ If you know of prior measurements this duplicates, please open an issue.
    not single-variable comparisons [Notes and Caveats 11)](#notes-and-caveats)
 8. **Nine of the eleven Gen1 x1 cells were measured concurrently**, two cells at a
    time on separate GPUs [Notes and Caveats 10)](#notes-and-caveats)
-9. Per-platform limits are in the last section of each report
+9. **The NVLink run changed the whole system along with the interconnect.** The NVLink
+   comparisons in Findings 3 and 5 are not single-variable comparisons
+   [Notes and Caveats 12)](#notes-and-caveats)
+10. **The NVLink run was made on a shared system, and Xid was not checked**
+    [Notes and Caveats 13)](#notes-and-caveats)
+11. Per-platform limits are in the last section of each report
 
 ---
 
@@ -629,6 +800,36 @@ driver (580.173 → 580.178) and the CUDA architecture list (`61;70` → `61`). 
 decode are GPU bound and the CPU only tokenizes and samples, so the link is taken as the
 main factor, **but it was not isolated.** The earlier report did not record card UUIDs,
 so the physical units cannot be shown to be the same.
+
+**12)** **The NVLink run is not a single-variable comparison with the PCIe V100 run.**
+The card model, the model file (sha256 identical) and the llama.cpp commit are the same,
+but the physical cards differ — SXM2 modules adapted to PCIe on one side, factory SXM2
+(DGX-1) on the other. Power delivery and cooling, the host (EPYC 7232 / 32GB → Xeon
+E5-2698 v4 x2), the driver (580.173 → 580.178) and the build (`61;70` → `70`) changed
+with it. Reading the differences in Findings 3 and 5 as NVLink is **a judgement that the
+interconnect is the largest change**, not an isolated result. GPUs 0~3 of the DGX-1 also
+have one or two NVLinks depending on the pair. The two-card cells use a one-link pair; a
+supplementary run of the same cell on a two-link pair differed by 0.1% in decode.
+
+**13)** **The NVLink run used four GPUs of a shared eight-GPU system** (METHOD v1.4
+section 3). Devices were selected by UUID and telemetry was limited to those four.
+**The kernel log (`dmesg`) records the whole system, including events on other users'
+devices, so it was not read — the Xid item of the section 4 checklist is therefore
+"not checked".** The server logs of all sixteen cells show no GPU errors and every cell
+completed. Other work may have been running on the remaining four GPUs, and the host
+CPU, memory and PCIe root are shared. Also, the warm spread of `layer-nomtp-4` is 5.01%,
+0.01 points over the METHOD limit. It is reported as a borderline value rather than
+re-measured — its tg is in the same range as the other layer cells on that platform.
+
+**14)** Supplementary finding S1 **sets a supplementary run against a main run.** The
+supplementary run changed the model (METHOD 1-1) and the context (1-4, `-c 28000`),
+because the same text is about 6% longer under Gemma's tokenizer and does not fit in
+27000. Quantization (Q6_K against Q3_K_M), MTP structure (separate draft model against
+built-in head) and the sampling defaults (top_k 64 against 20) also differ. **"The model
+decides whether MTP pays" is an observation that two models gave opposite results; which
+property of the model is responsible was not isolated.** The twelve supplementary cells
+were measured in two sessions under the same conditions; how is set out in section 7 of
+the report.
 
 ---
 
