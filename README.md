@@ -3,32 +3,33 @@
 **llama.cpp layer split vs tensor parallelism, measured across GPUs and interconnects.**
 
 llama.cpp's [multi-GPU guide](https://github.com/ggml-org/llama.cpp/blob/master/docs/multi-gpu.md)
-describes what each split mode is for but publishes no measured numbers. This repository
-records numbers from one frozen methodology, applied to two kinds of GPU, four cards
-each, on two interconnects each — P104-100 x4 at PCIe Gen1 x4 and at Gen1 x1, the narrowest
-link PCIe defines, and V100 16GB x4 at PCIe Gen3 x16 and on NVLink (DGX-1).
+describes what each split mode is for but publishes **no measured numbers.** This repository
+measures them with **one frozen methodology** on three kinds of GPU, four cards each. The main
+axes of comparison are the GPU and the PCIe bandwidth; some runs also compare NVLink.
 
-The workload follows the author's real usage — one cold prefill of ~23k
-tokens, then warm turns hitting the prompt cache. **Split modes rank differently on cold
-prefill and on warm turns**, so both are measured.
+The workload follows the author's real usage — one cold prefill of ~23k tokens, then warm
+turns hitting the prompt cache. **Split modes rank differently on cold prefill and on warm
+turns**, so both are measured.
 
 **Summary of results**
 
-- **Layer split buys no decode speed.** Measured single-card baseline: 27.71 t/s on
-  one card, 27.29 on four.
-- **Two cards with tensor parallelism beat four with layer split** — from the third
-  message on P104, the first on V100, the 34th at Gen1 x1, and from the cold prefill on
-  NVLink.
-- **Speculative decoding flips sign with the card and the split mode** — at similar
-  acceptance it loses 16% on P104, gains 3% on V100, and loses again under tensor.
-- **Interconnect and tensor-parallel scaling.** A 16x faster PCIe link did not scale
-  better, cutting P104 to x1 scaled worse (two to four cards: 1.37x to 1.16x), and moving
-  the same V100 card to NVLink scaled better (four-card efficiency 42% to 52%).
-- **Split modes respond oppositely to the link.** At a quarter of the bandwidth layer
-  split loses 4~6% of decode and tensor 24~48%, yet tensor still decodes 1.51x faster.
-- *(Supplementary)* Gemma 4 31B on the same NVLink system left tensor scaling unchanged
-  but **reversed MTP** (Qwen against Gemma: four-card layer +7.6% / −41.2%, tensor
-  −4.5% / +26.9%). [S1](FINDINGS.md#supplementary-findings--outside-the-frozen-method)
+1. **Layer split buys no decode speed.** Two cards with tensor parallelism decode faster
+   than four with layer split, and **on the same card** a wider link (Gen1 x1 → x4,
+   PCIe → NVLink) widens the gap.
+2. **Speculative decoding (MTP) flips sign with the card and the split mode.** At similar
+   acceptance it loses 16% on P104 and gains 3% on V100; switching the same card to tensor
+   makes it a loss again. On 1080 Ti it loses in every cell (−7~−17%).
+3. **Interconnect bandwidth and tensor-parallel scaling.** V100 on a 16x wider PCIe link
+   scaled worse than P104 (four-card efficiency 57% → 42%), cutting P104's link from x4 to
+   x1 also scaled worse, and NVLink scaled better.
+4. **Split modes respond oppositely to the link.** At a quarter of the bandwidth (P104,
+   Gen1 x4 → x1) decode drops 4~6% under layer split and 24~48% under tensor.
+5. **More cards can slow tensor prefill or speed it up.** From two to four cards, tensor
+   cold prefill falls on PCIe V100 (1,141 → 887 t/s) and rises on 1080 Ti (337 → 461) and
+   on NVLink.
+
+*(Supplementary)* On the same system, the MTP payoff reversed with the model —
+[Supplementary finding S1](FINDINGS.md#supplementary-findings--outside-the-frozen-method)
 
 English is authoritative; Korean lives alongside each file as `*.ko.md`.
 **이 문서의 한국어판: [README.ko.md](README.ko.md)**

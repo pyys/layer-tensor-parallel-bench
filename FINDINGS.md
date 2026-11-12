@@ -1,6 +1,6 @@
 # Findings — what we found, and what we did not
 
-Four runs on two kinds of card have been measured. The methodology is frozen in
+Five runs on three kinds of card have been measured. The methodology is frozen in
 [`METHOD.md`](METHOD.md); each platform's environment, results and
 interpretation live in its own report.
 
@@ -10,6 +10,7 @@ interpretation live in its own report.
 | V100-SXM2 16GB x4 | PCIe Gen3 x16 (~15.75 GB/s) | 2026-09-14~15 | [docs/v100-sxm2-16gb-x4.md](docs/v100-sxm2-16gb-x4.md) | [results/](results/) |
 | P104-100 8GB x4 | **PCIe Gen1 x1** (~250 MB/s) | 2026-10-01~02 | [docs/p104-100-x4-gen1x1.md](docs/p104-100-x4-gen1x1.md) | [results/](results/) |
 | V100-SXM2 16GB x4 | **NVLink** (DGX-1, 25.78 GB/s per link, 1~2 links per pair) | 2026-10-19 | [docs/v100-sxm2-16gb-x4-nvlink.md](docs/v100-sxm2-16gb-x4-nvlink.md) | [results/](results/) |
+| GTX 1080 Ti 11GB x4 | **PCIe Gen3, mixed x4/x8** (one x4, three x8) | 2026-11-12 | [docs/gtx1080ti-x4.md](docs/gtx1080ti-x4.md) | [results/](results/) |
 
 **Both platforms were measured with the same binary**
 (`CMAKE_CUDA_ARCHITECTURES=61;70`). Everything except the GPUs was reused, so the
@@ -29,14 +30,21 @@ separate (`70`) and the whole system — power delivery, cooling, host — chang
 [Notes and Caveats 12)](#notes-and-caveats). Four GPUs of a shared eight-GPU system
 were used [Notes and Caveats 13)](#notes-and-caveats).
 
-**On all four runs the fastest token generation came from `tensor parallelism +
+**The GTX 1080 Ti run swaps the cards on the Gen1 x1 host** — same host, driver and binary
+(`61`) as the Gen1 x1 run, and the same model file. The cards link at Gen3, x8 in three
+slots and x4 in one, so devices were chosen under the asymmetric-device clause of METHOD
+v1.5 and two layer-split cells failed the warm-spread check
+[Notes and Caveats 15)](#notes-and-caveats).
+
+**On all five runs the fastest token generation came from `tensor parallelism +
 MTP off`** — including PCIe Gen1 x1, the slowest PCIe link there is. Conventional
 advice is to use layer split with MTP on a slow interconnect; depending on the
 conditions, that is not always right. The evidence is below.
 [V100 results](docs/v100-sxm2-16gb-x4.md#2-results) ·
 [P104 results](docs/p104-100-x4.md#2-results) ·
 [P104 Gen1 x1 results](docs/p104-100-x4-gen1x1.md#2-results) ·
-[V100 NVLink results](docs/v100-sxm2-16gb-x4-nvlink.md#2-results)
+[V100 NVLink results](docs/v100-sxm2-16gb-x4-nvlink.md#2-results) ·
+[1080 Ti results](docs/gtx1080ti-x4.md#2-results)
 
 **There is also a supplementary run with a different model.** Gemma 4 31B was measured
 the same way on the same NVLink system — tensor scaling efficiency did not depend on the
@@ -74,8 +82,11 @@ actually returns as cards are added.
 | **P104 Gen1 x1** tg | — | 7.61 | 7.62 | 7.40 |
 | **V100** tg | **27.71** | 27.97 | 27.78 | 27.29 |
 | **V100 NVLink** tg | **27.13** | 27.97 | 27.39 | 26.90 |
+| **1080 Ti** tg | — | 12.45 | 12.20 ★ | 11.92 ★ |
 
-**All four stay within 4%. From two cards up, more cards is slightly slower.**
+**All stay within about 4%. From two cards up, more cards is slightly slower.** The 1080 Ti
+spans 4.3%, but its three- and four-card cells are invalid (★, warm spread over 5%
+[Notes and Caveats 15)](#notes-and-caveats)).
 Switching the interconnect from PCIe to NVLink changes nothing here — layer split
 passes one activation across each card boundary, so the link has almost nothing to do.
 
@@ -111,11 +122,11 @@ we did not measure.
 
 Warm turn wall time.
 
-| Configuration | P104 | V100 | P104 Gen1 x1 | V100 NVLink |
-|---|---|---|---|---|
-| layer, 4 cards | 59.7s | 16.2s | 64.7s | 16.5s |
-| **tensor, 2 cards** | **36.9s** | **10.8s** | **56.8s** | **10.5s** |
-| tensor, 4 cards | 28.1s | 9.9s | 51.4s | 7.9s |
+| Configuration | P104 | V100 | P104 Gen1 x1 | V100 NVLink | 1080 Ti |
+|---|---|---|---|---|---|
+| layer, 4 cards | 59.7s | 16.2s | 64.7s | 16.5s | 38.5s ★ |
+| **tensor, 2 cards** | **36.9s** | **10.8s** | **56.8s** | **10.5s** | **22.2s** |
+| tensor, 4 cards | 28.1s | 9.9s | 51.4s | 7.9s | 16.0s |
 
 **Half the cards, 1.6x faster on P104 and 1.5x on V100** — still 1.14x faster at
 Gen1 x1, and 1.57x faster on NVLink.
@@ -128,10 +139,10 @@ session = cold + warm x N
 crossover N = (cold_A - cold_B) / (warm_B - warm_A)
 ```
 
-| Crossover | P104 | V100 | P104 Gen1 x1 | V100 NVLink |
-|---|---|---|---|---|
-| tensor 4 > layer 4 | 1.2 turns | **0.87** | **21.5** | **−1.32** |
-| tensor 2 > layer 4 | 2.4 turns | **0.12** | **34.0** | **−0.23** |
+| Crossover | P104 | V100 | P104 Gen1 x1 | V100 NVLink | 1080 Ti |
+|---|---|---|---|---|---|
+| tensor 4 > layer 4 | 1.2 turns | **0.87** | **21.5** | **−1.32** | **−0.58** ★ |
+| tensor 2 > layer 4 | 2.4 turns | **0.12** | **34.0** | **−0.23** | 0.65 ★ |
 
 **On V100 tensor wins from the very first warm turn. At Gen1 x1 it takes 21.5 and 34
 turns** — tensor parallelism still wins every warm turn, but its cold prefill is almost
@@ -140,6 +151,12 @@ it still pays; for shorter sessions layer split is ahead.
 
 **On NVLink the crossover is negative** — tensor is already faster on the cold turn, so
 there is nothing to wait for (Finding 3).
+
+**On the 1080 Ti tensor four cards is also ahead from the cold turn** — not because its
+cold prefill is faster (it is not, Finding 3) but because the 400 generated tokens of the
+cold turn favour it. The layer four-card cell is invalid (★); against the valid layer
+two-card cell the crossovers are −1.63 (tensor 4) and −0.71 (tensor 2), the same answer
+([1080 Ti metrics section 1](docs/gtx1080ti-x4-metrics.md)).
 
 ### It also uses less memory
 
@@ -170,13 +187,16 @@ and of every upgrade**, paid again whenever the model changes or a card is added
 | **P104 Gen1 x1** tensor 4 | 60.7 | 47.2 |
 | **V100 NVLink** layer 4 | 1,533.9 | 473.8 |
 | **V100 NVLink** tensor 4 | **1,968.2** | **903.8** |
+| **1080 Ti** layer 4 ★ | **551.6** | 149.6 |
+| **1080 Ti** tensor 4 | 460.6 | **343.4** |
 
-| Ratio | P104 | V100 | P104 Gen1 x1 | V100 NVLink |
-|---|---|---|---|---|
-| Cold | layer ahead 1.91x | layer ahead 1.75x | **layer ahead 4.99x** | **tensor ahead 1.28x** |
-| Warm | tensor ahead 1.51x | tensor ahead 1.22x | **layer ahead 1.45x** | **tensor ahead 1.91x** |
+| Ratio | P104 | V100 | P104 Gen1 x1 | V100 NVLink | 1080 Ti |
+|---|---|---|---|---|---|
+| Cold | layer ahead 1.91x | layer ahead 1.75x | **layer ahead 4.99x** | **tensor ahead 1.28x** | layer ahead 1.20x |
+| Warm | tensor ahead 1.51x | tensor ahead 1.22x | **layer ahead 1.45x** | **tensor ahead 1.91x** | tensor ahead 2.30x |
 
-**The direction holds on P104 at Gen1 x4 and on V100; only the magnitude shrinks.**
+**The direction holds on P104 at Gen1 x4, on V100 and on the 1080 Ti; only the magnitude
+changes.**
 **At Gen1 x1 warm prefill reverses as well** — the all-reduce per batch costs more than
 tensor parallelism gains from splitting the work, even for a 700-token prompt.
 
@@ -230,9 +250,9 @@ The standard account of speculative decoding runs like this
 bandwidth bound and mostly idle, so verifying a few draft tokens is nearly free.**
 That premise is what makes speculative decoding work.
 
-**The premise fails in all eighteen measured conditions** (five more at Gen1 x1 in
-4-1-1, eight more on NVLink in 4-1-2). Even the lowest cost multiple is **1.82x**. And in
-**eleven of the eighteen, MTP is a net loss.**
+**The premise fails in all twenty-four measured conditions** (five more at Gen1 x1 in
+4-1-1, eight more on NVLink in 4-1-2, six more on the 1080 Ti in 4-1-3). Even the lowest
+cost multiple is **1.82x**. And in **seventeen of the twenty-four, MTP is a net loss.**
 
 ### 4-1. Measurements
 
@@ -283,6 +303,21 @@ almost regardless of split mode and card count, so the sign turns on small diffe
 in acceptance — all four layer cells gain, and tensor loses at two and four cards, where
 acceptance came out lower. Details in
 [NVLink metrics section 3](docs/v100-sxm2-16gb-x4-nvlink-metrics.md).
+
+#### 4-1-3. On the GTX 1080 Ti
+
+| | layer 4 ★ | layer 3 ★ | layer 2 | tensor 4 | tensor 3 | tensor 2 |
+|---|---|---|---|---|---|---|
+| **Cost multiple** | **2.23** | **2.26** | **2.10** | **2.05** | **2.18** | **2.15** |
+| **Break-even acceptance** | 41.5% | 42.3% | 37.2% | 35.4% | 39.6% | 38.7% |
+| Measured acceptance | 29.1% | 29.1% | 29.1% | 30.5% | 29.5% | 26.3% |
+| **Predicted** | −16.4% | −17.3% | −11.3% | −7.1% | −13.7% | −17.1% |
+| **Measured** | **−16.4%** | **−17.5%** | **−11.2%** | **−7.0%** | **−13.7%** | **−16.9%** |
+
+**All six lose, and all six within 0.2 percentage points.** ★ divides by an invalid
+no-MTP cell. The tensor cost multiple (2.05~2.18) is lower than P104 at Gen1 x4 (2.42)
+and x1 (2.90) — the wider link makes the draft step's all-reduce cheaper — but still above
+V100. Details in [1080 Ti metrics section 3](docs/gtx1080ti-x4-metrics.md).
 
 ### 4-2. What sets the regime is not batch size
 
@@ -441,6 +476,38 @@ On the same NVLink system, switching the model to Gemma 4 31B left efficiency al
 unchanged at 77 / 62 / 53% —
 [Supplementary finding S1](#supplementary-findings--outside-the-frozen-method).
 
+### A much wider PCIe link than Gen1 x4 leaves efficiency where it was — on another card
+
+The 1080 Ti run links at Gen3 x8 (four cards include one x4).
+
+| N | P104 Gen1 x1 | P104 Gen1 x4 | **1080 Ti Gen3 x8** |
+|---|---|---|---|
+| 2 | 63% | 81% | **84%** |
+| 3 | 47% | 59% | **69%** |
+| 4 | 38% | 57% | **58%** |
+
+Four-card efficiency is the same as P104 at Gen1 x4 on a link 4~8x wider — the same
+reading as the PCIe V100 above. `tg_1` here is the layer two-card value standing in for
+every N, because the same-N layer cells are invalid at three and four cards
+[Notes and Caveats 15)](#notes-and-caveats). The cards changed along with the link.
+
+### Whether tensor prefill rises or falls with the card count depends on the platform
+
+| Tensor / MTP off, cold pp | 2 cards | 3 cards | 4 cards |
+|---|---|---|---|
+| P104, Gen1 x1 | 64.6 | 64.1 | 60.7 |
+| P104, Gen1 x4 | 160.2 | 151.5 | 171.4 |
+| V100, PCIe Gen3 x16 | 1,140.5 | 961.3 | **887.4** |
+| V100, NVLink | 1,188.2 | 1,458.4 | **1,968.2** |
+| **1080 Ti, Gen3 x8 (four cards include one x4)** | 337.0 | 398.8 | **460.6** |
+
+**More cards slow tensor prefill on the PCIe V100 and speed it up on the 1080 Ti and on
+NVLink**; P104 is flat. Adding a card cuts each card's share of the compute and adds
+all-reduce traffic. We read the direction as set by the balance of the two — the V100 is
+fast enough that communication dominates on PCIe, while the 1080 Ti computes far more
+slowly on a link far wider than P104's. **This is a hypothesis; card speed and link were
+not separated.** Warm prefill follows the same direction (1080 Ti 250.9 → 286.2 → 343.4).
+
 ---
 
 ## 6. On these cards decode is not bandwidth bound
@@ -461,6 +528,8 @@ effective bandwidth = (model size / N) / time the card actually spends
 | V100 NVLink 1 card (measured) | 373 GB/s | 41% (900) |
 | V100 NVLink layer 4 | 370 GB/s | 41% (900) |
 | V100 NVLink tensor 4 | 195 GB/s | 22% (900) |
+| 1080 Ti layer 2 | 171 GB/s | 35% (484) |
+| 1080 Ti tensor 4 | 100 GB/s | 21% (484) |
 
 **All of them sit below half of spec.** V100 at one card and at four under layer split
 land on the same 42%, which is what the structure predicts — layer split only
@@ -714,7 +783,11 @@ If you know of prior measurements this duplicates, please open an issue.
    [Notes and Caveats 12)](#notes-and-caveats)
 10. **The NVLink run was made on a shared system, and Xid was not checked**
     [Notes and Caveats 13)](#notes-and-caveats)
-11. Per-platform limits are in the last section of each report
+11. **The 1080 Ti run's single-card baseline comes from one cell, two of its layer cells
+    are invalid, and its devices were chosen under METHOD v1.5** — only the four-card cells
+    include the x4 link, and cooling differs from the P104 runs
+    [Notes and Caveats 15)](#notes-and-caveats)
+12. Per-platform limits are in the last section of each report
 
 ---
 
@@ -830,6 +903,21 @@ decides whether MTP pays" is an observation that two models gave opposite result
 property of the model is responsible was not isolated.** The twelve supplementary cells
 were measured in two sessions under the same conditions; how is set out in section 7 of
 the report.
+
+**15)** **The GTX 1080 Ti run.** (a) **Device selection** — the system mixes one Gen3 x4
+link and three x8 links. Under the METHOD v1.5 asymmetric-device clause the main runs use
+the x8 devices at two cards (GPUs 1,3) and three cards (1,2,3); four cards cannot avoid
+the x4. The first-N runs (0,1 and 0,1,2) are published as auxiliary runs; leaving out the
+x4 raised tensor prefill by 6~8% and left layer split unchanged. (b) **Invalid cells** —
+`layer-nomtp-4` (warm spread 6.7%, re-run 7.2%) and `layer-nomtp-3` (12.6%) fail the 5%
+check. The same cell passed at 1.5% on the auxiliary device set, so we read it as a
+run-to-run effect of idle cards' clocks moving between 1,480 and ~1,800 MHz under layer
+split, **not established.** The values are shown but excluded from rankings and derived
+metrics. (c) **Baseline** — `tg_1` is the layer two-card value for every N, not the same-N
+layer value used on P104. (d) **Comparisons** — the host, driver and binary match the Gen1
+x1 run, but the link changed with the cards; against Gen1 x4 the host, driver and build
+differ as well. A user fan-curve daemon kept thermal throttling at about 0%, unlike the
+P104 runs on the default curve.
 
 ---
 
